@@ -7,6 +7,11 @@ import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
 import java.net.URL;
 import java.net.URLClassLoader;
 
@@ -17,9 +22,6 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 
-import org.apache.pdfbox.pdmodel.PDDocument;
-
-import adapters.PDFDocument;
 import interfaces.IDocument;
 
 public class UtilMenu {
@@ -54,13 +56,7 @@ public class UtilMenu {
 				if (i != 1) {
 					File arquivo = jfile.getSelectedFile();
 					try {
-						if(getFileExtension(arquivo.getName()).equals("pdf")) { 
-							IDocument doc = new PDFDocument(new PDDocument());
-							doc.open(arquivo.getAbsolutePath());
-							doc.getEditor();
-						} else {
-							JOptionPane.showMessageDialog(null, "Arquivo sem suporte pela ferramenta");
-						}
+						checkPluginToFile(arquivo);
 					} catch (Exception e1) {
 						e1.printStackTrace();
 					}
@@ -75,11 +71,46 @@ public class UtilMenu {
 		frame.setAlwaysOnTop(true);
 	}
 	
-	private static String getFileExtension(String filename) {
-		if (filename.contains("."))
-			return filename.substring(filename.lastIndexOf(".") + 1);
-		else
-			return "";
-	}
+	private static <T> void checkPluginToFile(File file) throws Exception {
 
+		String extensaoArquivo = UtilArquivo.getFileExtension(file.getName());
+		String[] plugins = UtilArquivo.getAllPlugins();
+
+		int i;
+		URL[] jars = new URL[plugins.length];
+		for (i = 0; i < plugins.length; i++) {
+			jars[i] = (new File("./plugins/" + plugins[i])).toURL();
+		}
+		URLClassLoader ulc = new URLClassLoader(jars);
+		boolean existePlugin = false;
+		for (int j = 0; j < plugins.length; j++) {
+			String factoryName = UtilArquivo.getDocumentName(plugins[j]);
+     		String extensionPlugin = UtilArquivo.getPluginExtension(plugins[j]);
+			
+		     if (extensionPlugin.equals(extensaoArquivo)) { 
+		    	 String className = factoryName.toLowerCase() + "." + factoryName; 
+		    	 Class<?> metaAdapter = Class.forName(className, true, ulc);
+		    	 
+				 Method[] methods = metaAdapter.getMethods();
+				 for (Method method : methods) {
+					if (method.getName().equals("setDocument")){
+						Type[] types = method.getGenericParameterTypes();
+						Class<T> metaDocument = (Class<T>) types[0];
+						Constructor<T> constructDocument = metaDocument.getConstructor();
+						IDocument doc = (IDocument) metaAdapter.newInstance();
+						method.invoke(doc, constructDocument.newInstance());
+						doc.open(file.getAbsolutePath());
+						doc.getEditor();
+					}
+				}
+		    	 
+				existePlugin = true; 
+			  }
+			 
+		}
+		if (!existePlugin) {
+			JOptionPane.showMessageDialog(null, "Não existe plugin que suporte este arquivo");
+		}
+	}
+	
 }
